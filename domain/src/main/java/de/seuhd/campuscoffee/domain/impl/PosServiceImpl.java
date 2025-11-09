@@ -81,23 +81,79 @@ public class PosServiceImpl implements PosService {
 
     /**
      * Converts an OSM node to a POS domain object.
-     * Note: This is a stub implementation and should be replaced with real mapping logic.
      */
     private @NonNull Pos convertOsmNodeToPos(@NonNull OsmNode osmNode) {
-        if (osmNode.nodeId().equals(5589879349L)) {
-            return Pos.builder()
-                    .name("Rada Coffee & Rösterei")
-                    .description("Caffé und Rösterei")
-                    .type(PosType.CAFE)
-                    .campus(CampusType.ALTSTADT)
-                    .street("Untere Straße")
-                    .houseNumber("21")
-                    .postalCode(69117)
-                    .city("Heidelberg")
-                    .build();
-        } else {
+        // Basic required fields
+        String name = osmNode.name();
+        String street = osmNode.street();
+        String houseNumber = osmNode.houseNumber();
+        String postalCodeStr = osmNode.postalCode();
+        String city = osmNode.city();
+
+        if (name == null || street == null || houseNumber == null || postalCodeStr == null || city == null) {
             throw new OsmNodeMissingFieldsException(osmNode.nodeId());
         }
+
+        // Parse postal code to integer
+        Integer postalCode;
+        try {
+            postalCode = Integer.parseInt(postalCodeStr.replaceAll("\\D", ""));
+        } catch (NumberFormatException e) {
+            throw new OsmNodeMissingFieldsException(osmNode.nodeId());
+        }
+
+        // Determine PosType from OSM type/tag heuristics
+        PosType posType = determinePosType(osmNode);
+
+        // Determine CampusType - use campus tag if provided, otherwise default to ALTSTADT
+        CampusType campus = determineCampus(osmNode);
+
+        String description = osmNode.description() == null ? "" : osmNode.description();
+
+        return Pos.builder()
+                .name(name)
+                .description(description)
+                .type(posType)
+                .campus(campus)
+                .street(street)
+                .houseNumber(houseNumber)
+                .postalCode(postalCode)
+                .city(city)
+                .build();
+    }
+
+    private @NonNull PosType determinePosType(@NonNull OsmNode osmNode) {
+        String typeTag = osmNode.type();
+        String name = osmNode.name() == null ? "" : osmNode.name().toLowerCase();
+        if (typeTag != null) {
+            String t = typeTag.toLowerCase();
+            if (t.contains("bakery") || t.contains("baker")) return PosType.BAKERY;
+            if (t.contains("vending")) return PosType.VENDING_MACHINE;
+            if (t.contains("caf")) return PosType.CAFE;
+            if (t.contains("cafeteria") || t.contains("mensa")) return PosType.CAFETERIA;
+        }
+
+        // Fallback heuristics based on name
+        if (name.contains("bäck") || name.contains("bakery") || name.contains("baker")) return PosType.BAKERY;
+        if (name.contains("automat") || name.contains("vending")) return PosType.VENDING_MACHINE;
+        if (name.contains("mensa") || name.contains("cafeteria")) return PosType.CAFETERIA;
+
+        // Default
+        return PosType.CAFE;
+    }
+
+    private @NonNull CampusType determineCampus(@NonNull OsmNode osmNode) {
+        String campusTag = osmNode.campus();
+        if (campusTag != null) {
+            String t = campusTag.toUpperCase();
+            try {
+                return CampusType.valueOf(t);
+            } catch (IllegalArgumentException ignored) {
+                // ignore and fallthrough to default
+            }
+        }
+        // Default campus when unknown
+        return CampusType.ALTSTADT;
     }
 
     /**
